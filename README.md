@@ -1,37 +1,60 @@
 # IEEE 802.11bn Multi-AP Coordinated Spatial Reuse Simulator
 
-A simulator for multi-AP coordinated spatial reuse (C-SR) in IEEE 802.11bn (Wi-Fi 8). In every TXOP a random sharing AP serves one of its stations, and a two-level hierarchical multi-armed bandit chooses the shared AP (level 1) and its station (level 2) that transmit at the same time.
+In every TXOP one AP wins the channel (the sharing AP) and serves one of its stations. A hierarchical
+multi-armed bandit (H-MAB) then picks a second AP (level 1) and one of its stations (level 2) to transmit
+at the same time. The bandit learns from the data rate of that second link.
 
-## Methods
-
-| Group | Methods |
-|---|---|
-| No urgency | Random, ε-greedy, UCB |
-| Random urgency | ε-greedy + urgency, UCB + urgency |
-| Dynamic urgency | ε-greedy + dynamic urgency, UCB + dynamic urgency |
-
-With urgency, the selection index is `Q + w·u` (plus the UCB bonus for UCB), and the sharing AP serves its most urgent station. The bandits learn only from the data rate.
-
-Dynamic urgency tracks packets. Packets arrive at every station, failed frames are retried up to `MAX_RETRIES` times, and packets older than `PACKET_DEADLINE` cycles are dropped. A station's urgency is held for `URGENCY_HOLD` cycles and then updated as
-
-```
-u = clip(u + DROP_STEP * (drop_ratio - TARGET_DROP), 0, 1)
-```
-
-where `drop_ratio` is the fraction of the station's arriving packets that were dropped in that period.
-
-## Usage
+## Run
 
 ```
 pip install -r requirements.txt
-python live.py            # live animation with sliders
-python live.py --graphs   # writes the three graphs below
+python main.py            # live window (chart: over time, or delay CDF per algorithm / access category)
+python main.py --graphs   # run all experiments, graphs go to results/ (about 80 s)
 ```
 
-The topology, radio model and all parameters are set at the top of `live.py`.
+## Project layout
+
+```
+main.py                 entry point
+simulator/
+  config.py             every constant, with the reason or assumption behind it
+  topology.py           AP and station positions and each station's application
+  channel.py            path loss, SINR and data rate
+  traffic.py            packet queues, retries, deadline drops, per-AP drop urgency
+  urgency.py            the four urgency types and the four access-category levels
+  bandits.py            Random, epsilon-greedy, UCB and Thompson sampling agents
+  hmab.py               two-level hierarchical bandit
+  methods.py            a method = algorithm + urgency type; runs it cycle by cycle
+  graphs.py             offline experiments and graphs
+  live_view.py          live window
+  style.py              shared colours
+results/                generated graphs
+paper/                  LaTeX source, bibliography and figures of the paper
+references/             the two reference papers
+```
+
+## Methods
+
+Every learning algorithm (epsilon-greedy, UCB, Thompson sampling) runs with every urgency type; Random is the
+baseline.
+
+| Urgency type | Urgency of a station |
+|---|---|
+| None | not used |
+| Application (per station) | level of its access category: voice 1.0, video 0.75, best effort 0.5, background 0.25 |
+| Packet drop (per AP) | level of its AP, raised or lowered by how much more or less the AP drops than the network |
+| Combined | average of the two, rounded to one of the four levels |
+
+With urgency, an arm's score is `Q + w * u` (plus the exploration term of UCB or Thompson), the sharing AP
+picks its station with probability proportional to urgency, and a station with an empty queue has urgency 0.
+The bandits always learn from the data rate only.
 
 ## Graphs
 
-![No urgency](graph_no_urgency.png)
-![Random urgency](graph_urgency.png)
-![Dynamic urgency](graph_dynamic_urgency.png)
+| File | Content |
+|---|---|
+| `graph_no_urgency.png` | data rate, drops and data-rate CDF without urgency |
+| `graph_app_urgency.png` | application urgency |
+| `graph_drop_urgency.png` | packet-drop urgency |
+| `graph_combined_urgency.png` | combined urgency |
+| `graph_cdf.png` | packet-delay CDFs per algorithm and per access category |
